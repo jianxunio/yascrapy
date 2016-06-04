@@ -1,0 +1,7 @@
+[{
+    "from_host": "192.168.0.1",
+    "from_port": 8888,
+    "to_host": "192.168.0.2",
+    "to_port": 8889,
+    "crawler": "test_crawler",
+}]

@@ -1,0 +1,11 @@
+{
+    "from_queue": "queue1",
+    "from_host": "192.168.0.1",
+    "from_port": 8888,
+    "to_queue": "queue2",
+    "to_host": "192.168.0.2",
+    "to_port": 8889,
+    "crawler": "test_crawler",
+    "user": "guest",
+    "password": "guest"
+}

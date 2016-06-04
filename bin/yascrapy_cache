@@ -1,0 +1,220 @@
+#!/usr/bin/env python
+# coding=utf-8
+
+"""This script loads `request_queue.Request` object from ssdb server 
+to rabbitmq `http_request` queues. One ssdb node and one specific crawler, 
+this script will start one process to load data to specific queues randomly.
+If you have 5 ssdb nodes and give crawler such as `test_crawler`, this script
+will start 5 processes to load data to queues from `http_request:$crawler_name:0` 
+to `http_request:$crawler_name:$queues-1`. $crawler_name and $queues are specified
+on input script params.
+
+Usage:
+
+>>> yascrapy_cache -n test_crawler -queues 10 -config_file "/etc/yascrapy/common.json"
+
+"""
+
+import argparse
+import multiprocessing
+import time
+import random
+from yascrapy.ssdb import get_clients
+from yascrapy.rabbitmq import create_conn
+from yascrapy.request_queue import RequestQueue
+from yascrapy.request_queue import Request
+from yascrapy.filter_queue import FilterQueue
+from yascrapy.config import Config
+from yascrapy import bloomd
+import redis
+import os
+import sys
+
+
+def declare_queues(cfg):
+    crawler_name = cfg["crawler_name"]
+    queues = cfg["queues"]
+    prefix = "http_request:%s:" % crawler_name
+    try:
+        queues = [int(q.replace(prefix, "")) for q in queues.split(",")]
+    except Exception, e:
+        print "[error] queues parameters format error"
+        return
+    gcfg = Config().get()
+    conn = create_conn(gcfg)
+    channel = conn.channel()
+    queue_limit = 1000000
+    queue_names = []
+    for q in queues:
+        queue_name = "http_request:%s:%d" % (crawler_name, q)
+        queue_names.append(queue_name)
+    for queue_name in queue_names:
+        channel.exchange_declare(
+            exchange=crawler_name,
+            exchange_type="topic",
+            durable=True
+        )
+        channel.queue_declare(
+            queue=queue_name,
+            durable=True,
+            arguments={"x-max-length": queue_limit}
+        )
+        channel.queue_bind(
+            exchange=crawler_name,
+            queue=queue_name,
+            routing_key=queue_name
+        )
+    channel.close()
+    conn.close()
+
+
+def load(cfg):
+    crawler_name = cfg["crawler_name"]
+    queues = cfg["queues"]
+    ssdb_host = cfg["ssdb_host"]
+    ssdb_port = cfg["ssdb_port"]
+    if queues == "":
+        print "[error] queues can not be empty"
+        return
+    if crawler_name == "":
+        print "[error] crawler_name can not be empty"
+        return
+    prefix = "http_request:%s:" % crawler_name
+    try:
+        queues = [int(q.replace(prefix, "")) for q in queues.split(",")]
+    except Exception, e:
+        print "[error] queues parameters format error"
+        return
+    queue_names = []
+    for q in queues:
+        queue_name = "http_request:%s:%d" % (crawler_name, q)
+        queue_names.append(queue_name)
+    gcfg = Config().get()
+    conn = create_conn(gcfg)
+    publish_channel = conn.channel()
+    # avoid losing message if connection closed, but this line can make
+    # publish slower
+    publish_channel.confirm_delivery()
+    bloomd_nodes = Config().get()["BloomdNodes"]
+    bloomd_client = bloomd.get_client(nodes=bloomd_nodes)
+    filter_q = FilterQueue(
+        crawler_name=crawler_name, bloomd_client=bloomd_client)
+    ssdb_nodes = Config().get()["SSDBNodes"]
+    ssdb_clients, ring = get_clients(nodes=ssdb_nodes)
+
+    conn_pool = redis.ConnectionPool(
+        host=ssdb_host, port=ssdb_port, max_connections=100, db=0)
+    r = redis.Redis(connection_pool=conn_pool)
+    cnt = 0
+    queue_max = 5000
+    while True:
+        try:
+            empty_queues = []
+            ch = conn.channel()
+            for q in queue_names:
+                infoq = ch.queue_declare(durable=True, passive=True, queue=q)
+                queue_size = infoq.method.message_count
+                if queue_size < queue_max:
+                    empty_queues.append(q)
+            ch.close()
+            if len(empty_queues) == 0:
+                print "all req queues size more than %d" % queue_max
+                time.sleep(1)
+                continue
+            start = "http_request:%s:" % crawler_name
+            end = "http_request:%s:z" % crawler_name
+            keys = r.execute_command("keys", start, end, 3000)
+            if len(keys) == 0:
+                print "[info] ssdb node %s:%s empty" % (ssdb_host, ssdb_port)
+                time.sleep(1)
+                continue
+            values = r.mget(keys)
+            reqs = []
+            for v in values:
+                req = Request()
+                req.from_json(v)
+                reqs.append(req)
+            d = {k: reqs[i] for i, k in enumerate(keys)}
+            for k, req in d.items():
+                queue_name = random.choice(empty_queues)
+                req_q = RequestQueue(
+                    crawler_name,
+                    ssdb_clients=ssdb_clients,
+                    filter_q=filter_q,
+                    queue_name=queue_name
+                )
+                req_q.push(req, publish_channel)
+            r.delete(*keys)
+            cnt += 1000
+            print cnt
+        except Exception, e:
+            print "[error] push fail, retry after 1s...", e
+            time.sleep(1)
+        # break
+
+
+def run_load(args):
+    '''load request to rabbitmq cluster from ssdb server'''
+    common_cfg = Config(conf_file=args.config_file).get()
+    ssdb_nodes = common_cfg["SSDBNodes"]
+    total_queues = [i for i in range(args.queues)]
+    process_list = []
+    declare_queues({
+        "crawler_name": args.crawler_name,
+        "queues": ",".join([str(x) for x in total_queues])
+    })
+    for i, node in enumerate(ssdb_nodes):
+        cfg = {
+            "crawler_name": args.crawler_name,
+            "queues": ",".join([str(x) for x in total_queues]),
+            "ssdb_host": node["Host"],
+            "ssdb_port": node["Port"]
+        }
+        print cfg
+        process = multiprocessing.Process(target=load, args=(cfg, ))
+        process_list.append(process)
+        process.start()
+    for p in process_list:
+        p.join()
+
+
+def input_params():
+    parser = argparse.ArgumentParser(
+        prog="proxyconfig",
+        description="Target: load and backup request messages"
+        "between ssdb and rabbitmq quickly"
+    )
+    subparsers = parser.add_subparsers(help='subcommand help')
+
+    load_parser = subparsers.add_parser(
+        "load",
+        help="load request messages from ssdb to rabbitmq"
+    )
+    load_parser.set_defaults(func=run_load)
+    load_parser.add_argument(
+        "-n",
+        "--crawler_name",
+        help="specify crawler name, not empty",
+        default=""
+    )
+    load_parser.add_argument(
+        "-q", "--queues", help="specify queue length", default=1, type=int)
+    load_parser.add_argument(
+        "-f",
+        "--config_file",
+        help="specify common config file",
+        default="/etc/yascrapy/common.json",
+        type=str
+    )
+
+    args = parser.parse_args()
+    args.func(args)
+
+
+def main():
+    input_params()
+
+if __name__ == "__main__":
+    current_dir = os.getcwd()
+    sys.path.append(current_dir)
+    main()

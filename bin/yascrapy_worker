@@ -1,0 +1,115 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+'''This script starts crawler workers to get structed data.
+You should see yascrapy 'Getting Started' in documentation to figure out 
+how this script work.
+
+Usage:
+
+>>> yascrapy_worker -n worker -c 5 -r 5 -f "/etc/yascrapy/common.json" &> worker.log
+
+You should ensure that worker directory is in your current directory.
+
+'''
+
+import sys
+import os
+import importlib
+from optparse import OptionParser
+import traceback
+import logging
+import multiprocessing
+import threading
+import time
+
+log_levels = {
+    'debug': logging.DEBUG,
+    'info': logging.INFO,
+    'warning': logging.WARNING,
+    'error': logging.ERROR,
+    'critical': logging.CRITICAL
+}
+
+
+def input_params():
+    parser = OptionParser()
+    parser.add_option("-c", "--count", dest="count",
+                      type="int", help="specify worker count", default=1)
+    parser.add_option(
+        "-n", "--name", dest="name", type="string", help="specify worker name")
+    parser.add_option(
+        "-l", "--level", dest="log_level", type="string", help="set log level")
+    parser.add_option("-t", "--test", action="store_true", dest="test", default=False,
+                      help="just test your html parser, if this is set, -c or --count will be ignore")
+    parser.add_option("-p", "--profile", action="store_true", dest="profile", default=False,
+                      help="profile your worker, if this is set, --count and --thread_count will be ignored")
+    parser.add_option("--profile_log", dest="profile_log",
+                      default="profile.txt", help="specify profile log file to output")
+    parser.add_option("-r", "--threads_count", dest="threads_count",
+                      default=10, type="int", help="specify threads number")
+    parser.add_option("-f", "--conf", dest="config_file",
+                      default="/etc/yascrapy/common.json", type="str", help="specify yascrapy conf file")
+    (options, args) = parser.parse_args()
+    return (options, args)
+
+
+def run_process(module, options):
+    threads = []
+    threads_count = options.threads_count
+    for i in range(threads_count):
+        worker = module.Worker(
+            log_levels[options.log_level if options.log_level else 'info'],
+            test=options.test,
+            config_file=options.config_file,
+            settings=module.settings
+        )
+        t = threading.Thread(target=worker.run)
+        threads.append(t)
+        t.daemon = True
+        t.start()
+    while threading.active_count() > 0:
+        time.sleep(0.1)
+
+
+def main():
+    (options, args) = input_params()
+    try:
+        module = importlib.import_module(options.name)
+    except Exception:
+        logging.error("worker name error, ensure worker module exsits")
+        logging.error(traceback.print_exc())
+        return
+    if options.profile:
+        import cProfile
+        import pstats
+        worker = module.Worker(
+            log_level=log_levels[
+                options.log_level if options.log_level else "info"],
+            profile=options.profile,
+            profile_log=options.profile_log,
+            config_file=options.config_file,
+            settings=module.settings
+        )
+        cProfile.runctx(
+            "worker.run()", globals(), locals(), filename=options.profile_log)
+        p = pstats.Stats(options.profile_log)
+        p.sort_stats("cumtime").print_stats(".1")
+        return
+    if options.test:
+        options.count = 1
+        options.threads_count = 1
+    process_list = []
+    for i in range(options.count):
+        process = multiprocessing.Process(
+            target=run_process, args=(module, options, )
+        )
+        process_list.append(process)
+        process.start()
+    for p in process_list:
+        p.join()
+
+if __name__ == "__main__":
+    current_dir = os.getcwd()
+    sys.path.append(current_dir)
+    main()
