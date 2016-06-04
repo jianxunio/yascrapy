@@ -76,7 +76,7 @@ $ git clone https://git.coding.net/cphilo/yascrapy.git
 $ python setup.py install
 ```
 
-Now modify the config files(`core.json`, `proxy.json` and `common.json`) under the folder `conf` and fill up with the information of you own deployment.
+Now modify the config files(`core.json`, `proxy.json` and `common.json`) under the folder `conf` and fill up with the information of your own deployment.
 
 `yascrapy_worker` is the script to start up `worker` component, `yascrapy_producer` is the producer to start up `producer` component, and `yascrapy_cache` is for handling cache.
 
