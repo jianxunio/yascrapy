@@ -1,0 +1,9 @@
+#!/bin/sh
+/usr/local/bin/rabbitmq-start
+/usr/bin/bloomd -f /etc/bloomd.conf &
+/usr/bin/redis-server /etc/redis.conf
+/usr/local/ssdb/ssdb-server -d /usr/local/ssdb/ssdb.conf
+/usr/bin/mongod --quiet --config /etc/mongodb.conf &
+
+# keep the docker container running here
+tail -f /dev/null

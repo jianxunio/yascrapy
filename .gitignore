@@ -1,0 +1,20 @@
+*.swp
+.DS_Store
+*.pyc
+*.so
+github_login.txt
+weibo_login.txt
+weibo_login_reserve.txt
+seeds.txt
+profile.txt
+weibo_utils/*.txt
+weibo_utils/cookies/
+weibo_utils/data/
+build/
+dist/
+*.egg-info/
+*.egg
+docs/build/
+
+# vim
+.*~

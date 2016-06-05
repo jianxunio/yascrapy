@@ -1,0 +1,18 @@
+{
+    "RabbitmqIp": "127.0.0.1",
+    "RabbitmqPort": 5672,
+    "RabbitmqManagerIp": "127.0.0.1",
+    "RabbitmqManagerPort": 15672,
+    "RabbitmqUser": "guest",
+    "RabbitmqPassword": "guest",
+    "ProxyRedisIp": "127.0.0.1",
+    "ProxyRedisPort": 6379,
+    "SSDBNodes": [{
+        "Host": "127.0.0.1",
+        "Port": 8888
+    }],
+    "BloomdNodes": [{
+        "Host": "127.0.0.1",
+        "Port": 8673
+    }]
+}

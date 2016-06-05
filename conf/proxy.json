@@ -1,0 +1,15 @@
+{
+    "ProxyRedisIp": "127.0.0.1",
+    "ProxyRedisPort": 6379,
+    "Configs": [{
+        "AddTimeout": 10,
+        "CheckTimeout": 10,
+        "AddFrequency": 2,
+        "CheckFrequency": 10,
+        "CheckRequests": 1,
+        "Name": "http_china",
+        "CheckUrl": "use this url to check whether proxies are valid or not",
+        "ProxyUrl": "use this url to get proxies",
+        "Status": 0
+    }]
+}

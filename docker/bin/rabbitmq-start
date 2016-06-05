@@ -1,0 +1,18 @@
+#!/bin/bash
+
+NODENAME=rabbit@`hostname -s`
+
+RABBITMQ_NODENAME=$NODENAME \
+    RABBITMQ_NODE_IP_ADDRESS=0.0.0.0 \
+    RABBITMQ_NODE_PORT=5672 \
+    RABBITMQ_LOG_BASE=/var/log/rabbitmq \
+    RABBITMQ_MNESIA_BASE=/var/lib/rabbitmq/mnesia \
+    rabbitmq-server -detached
+
+sleep 5
+
+
+rabbitmq-plugins -n $NODENAME enable rabbitmq_management
+rabbitmqctl -n $NODENAME add_user test test
+rabbitmqctl -n $NODENAME set_user_tags test administrator
+rabbitmqctl -n $NODENAME set_permissions -p / test ".*" ".*" ".*"
