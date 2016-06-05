@@ -16,7 +16,7 @@ setup(
     description='yet another scrapy framework',
     author='Cphilo',
     author_email='cphilo@huntcoder.com',
-    url='https://git.coding.net/cphilo/downloader.git',
+    url='https://github.com/jianxunio/yascrapy.git',
     packages=[
         'yascrapy',
         'yascrapy.libs',
